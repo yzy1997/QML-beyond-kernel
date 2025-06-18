@@ -21,12 +21,12 @@ new_trn = Explicit(qubits, n_layers, observables, train=True, heisenberg=heisenb
 nb_steps = 500
 for i in range(nb_steps):
 	print(i, '/' + str(nb_steps))
-		l, val = new_trn.learning_step(x_train, y_train, x_test, y_test)
-        test = tf.keras.losses.MeanSquaredError()(new_trn.model(x_test2), y_test2).numpy()
-        new_trn.test_history += [test]
-		print('Training, validation, test: ', l, val, test)
-		if val.numpy()<10**(-5):
-            break
+	l, val = new_trn.learning_step(x_train, y_train, x_test, y_test)
+	test = tf.keras.losses.MeanSquaredError()(new_trn.model(x_test2), y_test2).numpy()
+	new_trn.test_history += [test]
+	print('Training, validation, test: ', l, val, test)
+	if val.numpy()<10**(-5):
+		break
 
 # For storage
 new_trn.variables = new_trn.model.variables

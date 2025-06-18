@@ -438,11 +438,11 @@ if __name__ == '__main__':
 	for i in range(nb_steps):
 		print(i, '/' + str(nb_steps))
 		l, val = trn.learning_step(x_train, y_train, x_test, y_test)
-        test = tf.keras.losses.MeanSquaredError()(trn.model(x_test2), y_test2).numpy()
-        trn.test_history += [test]
+		test = tf.keras.losses.MeanSquaredError()(trn.model(x_test2), y_test2).numpy()
+		trn.test_history += [test]
 		print('Training, validation, test: ', l, val, test)
 		if val.numpy()<10**(-5):
-            break
+			break
 
 	# For storage
 	trn.variables = trn.model.variables
