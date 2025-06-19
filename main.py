@@ -1,4 +1,5 @@
 import os, pickle, sys
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 import tensorflow_quantum as tfq
@@ -7,6 +8,15 @@ import numpy as np
 import sklearn.kernel_ridge, sklearn.metrics.pairwise
 
 # Helper functions to generate the quantum circuits
+
+# 在导入 tensorflow 后添加
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(e)
 
 def one_qubit_rotation(qubit, symbols):
 	"""Arbitrary single-qubit rotation"""
@@ -144,25 +154,69 @@ class Implicit:
 
 		return (np.abs(inner_product[0]) ** 2)[0]
 
+	# def kernel_matrix(self, X, Xp):
+	# 	"""Evaluates the kernel matrix between two data matrices X, Xp (each storing single vectors in rows)."""
+	# 	gramm = []
+	# 	circuits = tf.repeat(self.circuit, repeats=len(Xp))
+	# 	feature_states = tfq.resolve_parameters(circuits, self.symbol_names, Xp)
+	# 	# For training, X == Xp
+	# 	if np.all(X == Xp):
+	# 		for i, x in enumerate(X):
+	# 			inner_products = tfq.math.inner_product(self.circuit, self.symbol_names, [x],
+	# 													[tf.gather(feature_states, np.arange(i + 1, len(X)))])
+	# 			gramm += [np.concatenate([[0] * i + [1], np.abs(inner_products)[0] ** 2])]
+	# 		for i in range(len(X)):
+	# 			for j in range(i + 1, len(X)):
+	# 				gramm[j][i] = gramm[i][j]
+	# 	# For model evaluation, X != Xp
+	# 	else:
+	# 		for x in X:
+	# 			inner_products = tfq.math.inner_product(self.circuit, self.symbol_names, [x], [feature_states])
+	# 			gramm += [np.abs(inner_products)[0] ** 2]
+	# 	return np.array(gramm, dtype=np.float32)
 	def kernel_matrix(self, X, Xp):
 		"""Evaluates the kernel matrix between two data matrices X, Xp (each storing single vectors in rows)."""
 		gramm = []
 		circuits = tf.repeat(self.circuit, repeats=len(Xp))
 		feature_states = tfq.resolve_parameters(circuits, self.symbol_names, Xp)
-		# For training, X == Xp
-		if np.all(X == Xp):
+		
+		# 更高效的比较方式
+		same_data = False
+		if X.shape == Xp.shape:
+			# 只比较第一个元素作为快速检查
+			if tf.reduce_all(tf.equal(X[0], Xp[0])):
+				# 如果第一个元素相同，再比较最后一个元素
+				if tf.reduce_all(tf.equal(X[-1], Xp[-1])):
+					same_data = True
+		
+		# 使用 TensorFlow 的 reduce_all 而不是 np.all
+		if same_data:
 			for i, x in enumerate(X):
-				inner_products = tfq.math.inner_product(self.circuit, self.symbol_names, [x],
-														[tf.gather(feature_states, np.arange(i + 1, len(X)))])
-				gramm += [np.concatenate([[0] * i + [1], np.abs(inner_products)[0] ** 2])]
+				# 只计算上三角部分 - 修复这里的括号问题
+				inner_products = tfq.math.inner_product(
+					self.circuit, 
+					self.symbol_names, 
+					[x],
+					[tf.gather(feature_states, np.arange(i + 1, len(X)))]
+				)
+				row = np.concatenate([[0] * i + [1], np.abs(inner_products)[0] ** 2])
+				gramm.append(row)
+			
+			# 填充下三角部分
+			gramm = np.array(gramm)
 			for i in range(len(X)):
 				for j in range(i + 1, len(X)):
 					gramm[j][i] = gramm[i][j]
-		# For model evaluation, X != Xp
 		else:
 			for x in X:
-				inner_products = tfq.math.inner_product(self.circuit, self.symbol_names, [x], [feature_states])
-				gramm += [np.abs(inner_products)[0] ** 2]
+				inner_products = tfq.math.inner_product(
+					self.circuit, 
+					self.symbol_names, 
+					[x], 
+					[feature_states]
+				)
+				gramm.append(np.abs(inner_products)[0] ** 2)
+		
 		return np.array(gramm, dtype=np.float32)
 
 class Explicit:
