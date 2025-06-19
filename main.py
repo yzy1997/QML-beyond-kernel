@@ -194,6 +194,34 @@ class Explicit:
 
 		return model
 
+	# def generate_fMNIST(self, nb_train, nb_test, norm):
+	# 	"""Generates the pre-process fashion MNIST dataset."""
+	# 	# Load raw dataset
+	# 	(x_train, y_train), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
+	# 	x_train, x_test = x_train / 255.0, x_test / 255.0
+
+	# 	# PCA and component-wise normalization
+	# 	x_train, x_test = truncate_x(x_train, x_test, n_components=n_qubits)
+	# 	x_mean, x_std = np.mean(x_train, axis=0), np.std(x_train, axis=0)
+	# 	x_train, x_test = (x_train - x_mean) / x_std, (x_test - x_mean) / x_std
+
+	# 	# Prune dataset
+	# 	x_train, x_test, x_test2 = x_train[:nb_train], x_test[:nb_test], x_test[nb_test:2*nb_test]
+
+	# 	# _save data for classical methods and compute the feature vectors of Havlivcek's encoding
+	# 	x_train_save, x_test_save, x_test2_save = x_train.numpy(), x_test.numpy(), x_test2.numpy()
+	# 	x_train, x_test, x_test2 = tf.convert_to_tensor(preprocess(x_train.numpy())), tf.convert_to_tensor(preprocess(x_test.numpy())), tf.convert_to_tensor(preprocess(x_test2.numpy()))
+
+	# 	# Compute new labels and normalize
+	# 	y_train, y_test, y_test2 = self.model(x_train), self.model(x_test), self.model(x_test2)
+	# 	if norm:
+	# 		std = np.std(y_train)
+	# 		self.std = std
+	# 		y_train, y_test, y_test2 = y_train/std, y_test/std, y_test2/std
+
+	# 	self.x_train, self.y_train, self.x_test, self.y_test, self.x_test2, self.y_test2, self.x_train_save, self.x_test_save, self.x_test2_save  = x_train, y_train, x_test, y_test, x_test2, y_test2, x_train_save, x_test_save, x_test2_save
+
+	# 	return x_train, y_train, x_test, y_test, x_test2, y_test2, x_train_save, x_test_save, x_test2_save
 	def generate_fMNIST(self, nb_train, nb_test, norm):
 		"""Generates the pre-process fashion MNIST dataset."""
 		# Load raw dataset
@@ -208,20 +236,43 @@ class Explicit:
 		# Prune dataset
 		x_train, x_test, x_test2 = x_train[:nb_train], x_test[:nb_test], x_test[nb_test:2*nb_test]
 
-		# _save data for classical methods and compute the feature vectors of Havlivcek's encoding
-		x_train_save, x_test_save, x_test2_save = x_train.numpy(), x_test.numpy(), x_test2.numpy()
-		x_train, x_test, x_test2 = tf.convert_to_tensor(preprocess(x_train.numpy())), tf.convert_to_tensor(preprocess(x_test.numpy())), tf.convert_to_tensor(preprocess(x_test2.numpy()))
-
-		# Compute new labels and normalize
-		y_train, y_test, y_test2 = self.model(x_train), self.model(x_test), self.model(x_test2)
+		# 保存原始10维数据
+		x_train_10 = x_train.numpy()
+		x_test_10 = x_test.numpy()
+		x_test2_10 = x_test2.numpy()
+		
+		# _save data for classical methods (55维)
+		x_train_save = preprocess(x_train_10)
+		x_test_save = preprocess(x_test_10)
+		x_test2_save = preprocess(x_test2_10)
+		
+		# 生成标签使用原始10维数据
+		y_train = self.model(tf.convert_to_tensor(x_train_10))
+		y_test = self.model(tf.convert_to_tensor(x_test_10))
+		y_test2 = self.model(tf.convert_to_tensor(x_test2_10))
+		
 		if norm:
 			std = np.std(y_train)
 			self.std = std
 			y_train, y_test, y_test2 = y_train/std, y_test/std, y_test2/std
 
-		self.x_train, self.y_train, self.x_test, self.y_test, self.x_test2, self.y_test2, self.x_train_save, self.x_test_save, self.x_test2_save  = x_train, y_train, x_test, y_test, x_test2, y_test2, x_train_save, x_test_save, x_test2_save
+		# 保存所有数据
+		self.x_train = tf.convert_to_tensor(x_train_save)
+		self.y_train = y_train
+		self.x_test = tf.convert_to_tensor(x_test_save)
+		self.y_test = y_test
+		self.x_test2 = tf.convert_to_tensor(x_test2_save)
+		self.y_test2 = y_test2
+		self.x_train_save = x_train_save
+		self.x_test_save = x_test_save
+		self.x_test2_save = x_test2_save
+		self.x_train_10 = x_train_10
+		self.x_test_10 = x_test_10
+		self.x_test2_10 = x_test2_10
 
-		return x_train, y_train, x_test, y_test, x_test2, y_test2, x_train_save, x_test_save, x_test2_save
+		return (self.x_train, self.y_train, self.x_test, self.y_test, 
+				self.x_test2, self.y_test2, self.x_train_save, 
+				self.x_test_save, self.x_test2_save)			
 
 	def relabel(self, norm):
 		"""Relabel data when this is not the first explicit model at a given system size that is generating the data."""
