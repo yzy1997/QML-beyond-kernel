@@ -341,10 +341,14 @@ class Explicit:
 
 		return y_train, y_test, y_test2
 
-	def learning_step(self, X_train, y_train, X_test, y_test, batchsize=None):
+	def learning_step(self, y_train, y_test, batchsize=None):
 		"""One gradient descent step on the training loss."""
 		model = self.model
-
+		
+		# 使用原始10维数据
+		X_train = tf.convert_to_tensor(self.x_train_10)
+		X_test = tf.convert_to_tensor(self.x_test_10)
+		
 		# Evaluate the labels assigned by the model and the resulting MSE loss
 		if batchsize is None:
 			X = X_train
@@ -353,6 +357,7 @@ class Explicit:
 			indices = np.random.randint(len(y_train), size=batchsize)
 			X = tf.gather(X_train, indices)
 			y = tf.gather(y_train, indices)
+		
 		with tf.GradientTape() as tape:
 			tape.watch(model.trainable_variables)
 			output = model(X)
@@ -538,15 +543,31 @@ if __name__ == '__main__':
 	err_impl = errs[idx]
 	print('Best training loss, validation loss, test loss', err_impl, val_impl, test_impl)
 
+	# # Train explicit model
+	# nb_steps = 500
+	# for i in range(nb_steps):
+	# 	print(i, '/' + str(nb_steps))
+	# 	l, val = trn.learning_step(x_train, y_train, x_test, y_test)
+	# 	test = tf.keras.losses.MeanSquaredError()(trn.model(x_test2), y_test2).numpy()
+	# 	trn.test_history += [test]
+	# 	print('Training, validation, test: ', l, val, test)
+	# 	if val.numpy()<10**(-5):
+	# 		break
 	# Train explicit model
 	nb_steps = 500
 	for i in range(nb_steps):
 		print(i, '/' + str(nb_steps))
-		l, val = trn.learning_step(x_train, y_train, x_test, y_test)
-		test = tf.keras.losses.MeanSquaredError()(trn.model(x_test2), y_test2).numpy()
+		l, val = trn.learning_step(y_train, y_test)
+		
+		# 计算测试损失 - 使用10维数据
+		test = tf.keras.losses.MeanSquaredError()(
+			trn.model(tf.convert_to_tensor(trn.x_test2_10)), 
+			y_test2
+		).numpy()
+		
 		trn.test_history += [test]
 		print('Training, validation, test: ', l, val, test)
-		if val.numpy()<10**(-5):
+		if val < 10**(-5):
 			break
 
 	# For storage
