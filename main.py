@@ -221,12 +221,34 @@ class Implicit:
 
 class Explicit:
 
+	# def __init__(self, qubits, n_layers, observables, train=False, heisenberg=False):
+	# 	self.qubits = qubits
+	# 	self.n_layers = n_layers
+	# 	self.observables = observables
+	# 	self.heisenberg = heisenberg
+	# 	self.x_train, self.y_train, self.x_test, self.y_test, self.x_train_save, self.x_test_save = None, None, None, None, None, None
+	# 	self.std = None
+	# 	self.model = self.generate_model_explicit(train, heisenberg)
+	# 	self.variables = self.model.variables
+	# 	self.optimizer_var = tf.keras.optimizers.Adam(learning_rate=0.01, amsgrad=True)
+	# 	self.optimizer_out = tf.keras.optimizers.Adam(learning_rate=0.1, amsgrad=True)
+	# 	self.loss_history = []
+	# 	self.val_history = []
+	# 	self.test_history = []
+ 
 	def __init__(self, qubits, n_layers, observables, train=False, heisenberg=False):
 		self.qubits = qubits
 		self.n_layers = n_layers
 		self.observables = observables
 		self.heisenberg = heisenberg
-		self.x_train, self.y_train, self.x_test, self.y_test, self.x_train_save, self.x_test_save = None, None, None, None, None, None
+		self.x_train, self.y_train, self.x_test, self.y_test, self.x_test2, self.y_test2 = None, None, None, None, None, None
+		self.x_train_save, self.x_test_save, self.x_test2_save = None, None, None
+
+		# 初始化10维数据属性
+		self.x_train_10 = None
+		self.x_test_10 = None
+		self.x_test2_10 = None
+
 		self.std = None
 		self.model = self.generate_model_explicit(train, heisenberg)
 		self.variables = self.model.variables
@@ -234,8 +256,7 @@ class Explicit:
 		self.optimizer_out = tf.keras.optimizers.Adam(learning_rate=0.1, amsgrad=True)
 		self.loss_history = []
 		self.val_history = []
-		self.test_history = []
-
+		self.test_history = []		
 		return
 
 	def generate_model_explicit(self, train=False, heisenberg=False):
@@ -276,6 +297,58 @@ class Explicit:
 	# 	self.x_train, self.y_train, self.x_test, self.y_test, self.x_test2, self.y_test2, self.x_train_save, self.x_test_save, self.x_test2_save  = x_train, y_train, x_test, y_test, x_test2, y_test2, x_train_save, x_test_save, x_test2_save
 
 	# 	return x_train, y_train, x_test, y_test, x_test2, y_test2, x_train_save, x_test_save, x_test2_save
+	# def generate_fMNIST(self, nb_train, nb_test, norm):
+	# 	"""Generates the pre-process fashion MNIST dataset."""
+	# 	# Load raw dataset
+	# 	(x_train, y_train), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
+	# 	x_train, x_test = x_train / 255.0, x_test / 255.0
+
+	# 	# PCA and component-wise normalization
+	# 	x_train, x_test = truncate_x(x_train, x_test, n_components=n_qubits)
+	# 	x_mean, x_std = np.mean(x_train, axis=0), np.std(x_train, axis=0)
+	# 	x_train, x_test = (x_train - x_mean) / x_std, (x_test - x_mean) / x_std
+
+	# 	# Prune dataset
+	# 	x_train, x_test, x_test2 = x_train[:nb_train], x_test[:nb_test], x_test[nb_test:2*nb_test]
+
+	# 	# 保存原始10维数据
+	# 	x_train_10 = x_train.numpy()
+	# 	x_test_10 = x_test.numpy()
+	# 	x_test2_10 = x_test2.numpy()
+		
+	# 	# _save data for classical methods (55维)
+	# 	x_train_save = preprocess(x_train_10)
+	# 	x_test_save = preprocess(x_test_10)
+	# 	x_test2_save = preprocess(x_test2_10)
+		
+	# 	# 生成标签使用原始10维数据
+	# 	y_train = self.model(tf.convert_to_tensor(x_train_10))
+	# 	y_test = self.model(tf.convert_to_tensor(x_test_10))
+	# 	y_test2 = self.model(tf.convert_to_tensor(x_test2_10))
+		
+	# 	if norm:
+	# 		std = np.std(y_train)
+	# 		self.std = std
+	# 		y_train, y_test, y_test2 = y_train/std, y_test/std, y_test2/std
+
+	# 	# 保存所有数据
+	# 	self.x_train = tf.convert_to_tensor(x_train_save)
+	# 	self.y_train = y_train
+	# 	self.x_test = tf.convert_to_tensor(x_test_save)
+	# 	self.y_test = y_test
+	# 	self.x_test2 = tf.convert_to_tensor(x_test2_save)
+	# 	self.y_test2 = y_test2
+	# 	self.x_train_save = x_train_save
+	# 	self.x_test_save = x_test_save
+	# 	self.x_test2_save = x_test2_save
+	# 	self.x_train_10 = x_train_10
+	# 	self.x_test_10 = x_test_10
+	# 	self.x_test2_10 = x_test2_10
+
+	# 	return (self.x_train, self.y_train, self.x_test, self.y_test, 
+	# 			self.x_test2, self.y_test2, self.x_train_save, 
+	# 			self.x_test_save, self.x_test2_save)
+ 
 	def generate_fMNIST(self, nb_train, nb_test, norm):
 		"""Generates the pre-process fashion MNIST dataset."""
 		# Load raw dataset
@@ -320,6 +393,8 @@ class Explicit:
 		self.x_train_save = x_train_save
 		self.x_test_save = x_test_save
 		self.x_test2_save = x_test2_save
+		
+		# 保存10维数据
 		self.x_train_10 = x_train_10
 		self.x_test_10 = x_test_10
 		self.x_test2_10 = x_test2_10
