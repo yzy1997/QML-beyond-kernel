@@ -86,40 +86,60 @@ def generate_circuit(qubits, n_layers, heisenberg=False):
 	return circuit, list(params.flat), list(inputs), list(inputs_prod)
 
 class ExplicitPQC(tf.keras.layers.Layer):
-	"""The Keras layer used by the explicit model to store its circuit, parameters, and evaluate itself."""
-	def __init__(self, qubits, n_layers, observables, train, heisenberg, name="explicit_PQC"):
-		super(ExplicitPQC, self).__init__(name=name)
-		self.n_layers = n_layers
-		self.n_qubits = len(qubits)
-		self.enc_layers = 1
+    """The Keras layer used by the explicit model to store its circuit, parameters, and evaluate itself."""
+    def __init__(self, qubits, n_layers, observables, train, heisenberg, name="explicit_PQC"):
+        super(ExplicitPQC, self).__init__(name=name)
+        self.n_layers = n_layers
+        self.n_qubits = len(qubits)
+        self.enc_layers = 1
 
-		circuit, theta_symbols, input_symbols, inputs_prod = generate_circuit(qubits, n_layers, heisenberg)
+        circuit, theta_symbols, input_symbols, inputs_prod = generate_circuit(qubits, n_layers, heisenberg)
 
-		if train:
-			theta_init = tf.random_normal_initializer(mean=0.0, stddev=0.05)
-		else:
-			theta_init = tf.random_uniform_initializer(minval=0.0, maxval=np.pi)
-		self.theta = tf.Variable(
-			initial_value=theta_init(shape=(1, len(theta_symbols)), dtype="float32"),
-			trainable=True, name="thetas"
-		)
+        if train:
+            theta_init = tf.random_normal_initializer(mean=0.0, stddev=0.05)
+        else:
+            theta_init = tf.random_uniform_initializer(minval=0.0, maxval=np.pi)
+            
+        # 使用 add_weight 创建变量
+        self.theta = self.add_weight(
+            name="thetas",
+            shape=(1, len(theta_symbols)),
+            initializer=theta_init,
+            dtype="float32",
+            trainable=True
+        )
 
-		# Define explicit symbol order.
-		symbols = [str(symb) for symb in theta_symbols + input_symbols + inputs_prod]
-		self.indices = tf.constant([symbols.index(a) for a in sorted(symbols)])
+        # 定义符号顺序
+        symbols = [str(symb) for symb in theta_symbols + input_symbols + inputs_prod]
+        self.indices = tf.constant([symbols.index(a) for a in sorted(symbols)])
 
-		self.empty_circuit = tfq.convert_to_tensor([cirq.Circuit()])
-		self.computation_layer = tfq.layers.ControlledPQC(circuit, observables)
+        # 保存电路定义
+        self.circuit_definition = circuit
+        self.observables = observables
+        
+        # 延迟初始化
+        self.empty_circuit = None
+        self.computation_layer = None
 
-	def call(self, inputs):
-		batch_dim = tf.gather(tf.shape(inputs[0]), 0)
-		tiled_up_circuits = tf.repeat(self.empty_circuit, repeats=batch_dim)
-		tiled_up_thetas = tf.tile(self.theta, multiples=[batch_dim, 1])
-		tiled_up_inputs = tf.tile(inputs[0], multiples=[1, self.enc_layers])
-		joined_vars = tf.concat([tiled_up_thetas, tiled_up_inputs], axis=1)
-		joined_vars = tf.gather(joined_vars, self.indices, axis=1)
+    def build(self, input_shape):
+        # 延迟创建计算层
+        self.empty_circuit = tfq.convert_to_tensor([cirq.Circuit()])
+        self.computation_layer = tfq.layers.ControlledPQC(self.circuit_definition, self.observables)
+        super().build(input_shape)
 
-		return self.computation_layer([tiled_up_circuits, joined_vars])
+    def call(self, inputs):
+        # 确保计算层已创建
+        if self.computation_layer is None:
+            self.build(inputs[0].shape)
+        
+        batch_dim = tf.gather(tf.shape(inputs[0]), 0)
+        tiled_up_circuits = tf.repeat(self.empty_circuit, repeats=batch_dim)
+        tiled_up_thetas = tf.tile(self.theta, multiples=[batch_dim, 1])
+        tiled_up_inputs = tf.tile(inputs[0], multiples=[1, self.enc_layers])
+        joined_vars = tf.concat([tiled_up_thetas, tiled_up_inputs], axis=1)
+        joined_vars = tf.gather(joined_vars, self.indices, axis=1)
+
+        return self.computation_layer([tiled_up_circuits, joined_vars])
 
 class Rescaling(tf.keras.layers.Layer):
 	"""A post-processing layer to rescale the explicit model's expectation values with a trainable weight."""
@@ -677,11 +697,47 @@ if __name__ == '__main__':
 			break
 
 	# 存储结果
-	gen.model = None
-	trn.model = None
+	# 清理对象以便序列化
+	def clean_for_pickling(obj):
+		"""移除无法被 pickle 序列化的属性"""
+		# 移除 TensorFlow 模型和优化器
+		if hasattr(obj, 'model'):
+			obj.model = None
+		if hasattr(obj, 'optimizer_var'):
+			obj.optimizer_var = None
+		if hasattr(obj, 'optimizer_out'):
+			obj.optimizer_out = None
+		
+		# 移除 TensorFlow 变量
+		if hasattr(obj, 'variables'):
+			obj.variables = None
+		
+		# 移除计算图相关引用
+		if hasattr(obj, 'computation_layer'):
+			obj.computation_layer = None
+		if hasattr(obj, 'empty_circuit'):
+			obj.empty_circuit = None
+		
+		# 对于 Implicit 对象
+		if hasattr(obj, 'circuit'):
+			obj.circuit = None
+		if hasattr(obj, 'symbol_names'):
+			obj.symbol_names = None
+
+	# 清理所有需要序列化的对象
+	clean_for_pickling(gen)
+	clean_for_pickling(trn)
+	clean_for_pickling(impl)
+ 
 	pickle_path = f'./results/n{str(sys_args[1])}_L{str(sys_args[2])}_T{str(sys_args[3])}_{str(sys_args[4])}_fashion'
 	if heisenberg:
 		pickle_path += '_heisen'
 	pickle_path += 'gauss.pckl'
 	
-	pickle.dump([gen, trn, impl, d, g, err_0, val_0, test_0, errs, vals, tests], open(pickle_path, 'wb'))
+	# pickle.dump([gen, trn, impl, d, g, err_0, val_0, test_0, errs, vals, tests], open(pickle_path, 'wb'))
+	# 确保目录存在
+	os.makedirs(os.path.dirname(pickle_path), exist_ok=True)
+
+	# 保存数据
+	with open(pickle_path, 'wb') as f:
+		pickle.dump([gen, trn, impl, d, g, err_0, val_0, test_0, errs, vals, tests], f)
