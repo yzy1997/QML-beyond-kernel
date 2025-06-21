@@ -251,7 +251,10 @@ class Explicit:
 
 		self.std = None
 		self.model = self.generate_model_explicit(train, heisenberg)
-		self.variables = self.model.variables
+		if self.model is not None:  # 确保模型已创建
+			self.variables = self.model.variables
+		else:
+			self.variables = None
 		self.optimizer_var = tf.keras.optimizers.Adam(learning_rate=0.01, amsgrad=True)
 		self.optimizer_out = tf.keras.optimizers.Adam(learning_rate=0.1, amsgrad=True)
 		self.loss_history = []
@@ -374,6 +377,10 @@ class Explicit:
 		x_test2_save = preprocess(x_test2_10)
 		
 		# 生成标签使用原始10维数据
+		# 确保模型已初始化
+		if self.model is None:
+			self.model = self.generate_model_explicit(False, self.heisenberg)
+		
 		y_train = self.model(tf.convert_to_tensor(x_train_10))
 		y_test = self.model(tf.convert_to_tensor(x_test_10))
 		y_test2 = self.model(tf.convert_to_tensor(x_test2_10))
@@ -537,50 +544,55 @@ def compute_d(kernel):
 if __name__ == '__main__':
 	sys_args = sys.argv
 
-	# n_qubits = 10
+	# 参数解析
 	n_qubits = int(sys_args[1])
-	qubits = cirq.GridQubit.rect(1, n_qubits)
-	observables = [cirq.Z(qubits[0])]
-
-	# n_layers = 3
 	n_layers = int(sys_args[2])
-
-	# heisenberg = False
-	heisenberg = (str(sys_args[5]) == 'True')
-	gen = Explicit(qubits, n_layers, observables, heisenberg=heisenberg)
-	trn = Explicit(qubits, n_layers, observables, train=True, heisenberg=heisenberg)
-
-	# nb_train = 500, fas
 	nb_train = int(sys_args[3])
+	is_first_run = str(sys_args[4]) == '0'
+	heisenberg = (str(sys_args[5]) == 'True')
 	nb_test = 100
-	norm = True
-
+	norm = True	
+	qubits = cirq.GridQubit.rect(1, n_qubits)
+	observables = [cirq.Z(qubits[0])]	
+	# 创建两个 Explicit 对象
+	gen = Explicit(qubits, n_layers, observables, heisenberg=heisenberg)
+	trn = Explicit(qubits, n_layers, observables, train=True, heisenberg=heisenberg)	
 	# First execution at this system size?
-	if str(sys_args[4]) == '0':
-		# Generate pre-processed fashion MNIST dataset
+	if is_first_run:
+		# 生成数据
 		x_train, y_train, x_test, y_test, x_test2, y_test2, x_train_save, _ , _ = gen.generate_fMNIST(nb_train, nb_test, norm)
 
-		# Compute kernel
-		impl = Implicit(qubits)
-		kernel = impl.kernel_matrix(x_train, x_train)
+		# 将生成的数据复制到 trn 对象中
+		trn.x_train_10 = gen.x_train_10
+		trn.x_test_10 = gen.x_test_10
+		trn.x_test2_10 = gen.x_test2_10
+		trn.y_train = gen.y_train
+		trn.y_test = gen.y_test
+		trn.y_test2 = gen.y_test2
 
-		# Compute effective dimension (d)
+		# 计算 kernel
+		impl = Implicit(qubits)
+		kernel = impl.kernel_matrix(gen.x_train_save, gen.x_train_save)  # 使用55维数据
+
+		# 计算有效维度和几何差异
 		kernel_tensor = tf.convert_to_tensor(kernel)
 		d = compute_d(kernel_tensor)
 		print('Effective dimension d', d)
 
-		# Compute geometric difference (g)
-		g = compute_g(x_train_save, kernel)
+		g = compute_g(gen.x_train_save, kernel)  # 使用55维数据
 		print('Geometric difference g', g)
 
-		# Store kernel matrix and stuff
+		# 存储 kernel 矩阵
 		impl.kernel = kernel
 		impl.d = d
 		impl.g = g
-
 	else:
-		# Load already generated kernel matrix and stuff
-		pickle_path = './results/n'+str(sys_args[1])+'_L'+str(sys_args[2])+'_T'+str(sys_args[3])+'_0'+'_fashion'+(str(sys_args[5])=='True')*'_heisen'+'gauss.pckl'
+		# 加载之前保存的数据
+		pickle_path = f'./results/n{str(sys_args[1])}_L{str(sys_args[2])}_T{str(sys_args[3])}_0_fashion'
+		if heisenberg:
+			pickle_path += '_heisen'
+		pickle_path += 'gauss.pckl'
+
 		l = pickle.load(open(pickle_path, 'rb'))
 		impl = l[2]
 		kernel = np.copy(impl.kernel)
@@ -588,9 +600,27 @@ if __name__ == '__main__':
 		d = impl.d
 		g = impl.g
 		gen_old = l[0]
-		gen.x_train, gen.x_test, gen.x_test2, gen.x_train_save, gen.x_test_save, gen.x_test2_save = gen_old.x_train, gen_old.x_test, gen_old.x_test2, gen_old.x_train_save, gen_old.x_test_save, gen_old.x_test2_save
-		x_train, x_test, x_test2 = gen.x_train, gen.x_test, gen.x_test2
+
+		# 将加载的数据复制到 gen 和 trn 对象
+		gen.x_train_10 = gen_old.x_train_10
+		gen.x_test_10 = gen_old.x_test_10
+		gen.x_test2_10 = gen_old.x_test2_10
+		gen.y_train = gen_old.y_train
+		gen.y_test = gen_old.y_test
+		gen.y_test2 = gen_old.y_test2
+
+		trn.x_train_10 = gen_old.x_train_10
+		trn.x_test_10 = gen_old.x_test_10
+		trn.x_test2_10 = gen_old.x_test2_10
+		trn.y_train = gen_old.y_train
+		trn.y_test = gen_old.y_test
+		trn.y_test2 = gen_old.y_test2
+
+		# 重新标准化标签
 		y_train, y_test, y_test2 = gen.relabel(norm)
+		trn.y_train = y_train
+		trn.y_test = y_test
+		trn.y_test2 = y_test2
 
 	# "Train" implicit model
 	# First unregularized
@@ -632,24 +662,26 @@ if __name__ == '__main__':
 	nb_steps = 500
 	for i in range(nb_steps):
 		print(i, '/' + str(nb_steps))
-		l, val = trn.learning_step(y_train, y_test)
+		# 确保使用 trn 对象自己的数据
+		l, val = trn.learning_step(trn.y_train, trn.y_test)
 		
-		# 计算测试损失 - 使用10维数据
+		# 计算测试损失
 		test = tf.keras.losses.MeanSquaredError()(
 			trn.model(tf.convert_to_tensor(trn.x_test2_10)), 
-			y_test2
+			trn.y_test2
 		).numpy()
 		
-		trn.test_history += [test]
+		trn.test_history.append(test)
 		print('Training, validation, test: ', l, val, test)
 		if val < 10**(-5):
 			break
 
-	# For storage
-	trn.variables = trn.model.variables
+	# 存储结果
 	gen.model = None
 	trn.model = None
-
-	# Store in pickle file
-	pickle_path = './results/n'+str(sys_args[1])+'_L'+str(sys_args[2])+'_T'+str(sys_args[3])+'_'+str(sys_args[4])+'_fashion'+(str(sys_args[5])=='True')*'_heisen'+'gauss.pckl'
+	pickle_path = f'./results/n{str(sys_args[1])}_L{str(sys_args[2])}_T{str(sys_args[3])}_{str(sys_args[4])}_fashion'
+	if heisenberg:
+		pickle_path += '_heisen'
+	pickle_path += 'gauss.pckl'
+	
 	pickle.dump([gen, trn, impl, d, g, err_0, val_0, test_0, errs, vals, tests], open(pickle_path, 'wb'))
